@@ -54,18 +54,19 @@ for blob in $layers {
   for package in $packages {
     if not ($package in ($scope | get 'fullname')) {
       $scope = $scope | append (
-        do {
-          # TODO
-          # - fix field 'Description'
-          # - parse dependencies
-
-          let infos = ((rpm $dbpath -q --info $package) | parse --regex '(?s)^(?P<key>.*?) *:(?P<value>.*?)$' | reduce -f {} {|it, acc| $acc | upsert $it.key $it.value })
-          $infos
-            | insert "introduced_in" $blob_shortname
-            | insert "dep" ((rpm $dbpath -qR $package) | lines),
-            | insert "dropped" false
-            | insert 'fullname' $package
-        }
+        rpm $dbpath -q --json --info $package
+          | from json
+          | select --optional Name Version Release Arch Installtime Group Size License Sourcerpm Buildtime Buildhost Packager Vendor Url Bugurl Summary Description
+          | insert "introduced_in" $blob_shortname
+          | insert "dep" (
+              rpm $dbpath -qR $package
+                | lines
+                | par-each -k {|cap| (rpm -q --whatprovides ($cap | split row ' ').0) | default null}
+                | where (str contains "no package provides" | not $in)
+                | uniq
+            )
+          | insert "dropped" false
+          | insert 'fullname' $package
       )
     }
   }
