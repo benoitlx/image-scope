@@ -16,7 +16,7 @@ def main [] {
 }
 
 def "main clear" [] {
-  
+  rm -rf /tmp/image-scope/
 }
 
 def "main inspect" [image_name: string] {
