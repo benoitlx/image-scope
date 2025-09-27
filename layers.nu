@@ -48,7 +48,7 @@ def "main inspect" [image_name: string] {
 
   "[]" | save -f $meta
 
-  $layers | process_layers $working_dir $image $meta | to json
+  $layers | process_layers $working_dir $image $meta | to json | save -f "packages-map.json"
 }
 
 def process_layers [working_dir: string, image: string, meta: string] {
@@ -97,6 +97,8 @@ def process_layers [working_dir: string, image: string, meta: string] {
               )
             | insert "dropped" false
             | insert 'fullname' $package
+            | merge {Summary: ($in.Summary | str join)}
+            | merge {Description: ($in.Description | str join)}
         )
       }
     }
