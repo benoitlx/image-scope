@@ -27,7 +27,7 @@ struct Node {
     // Bugurl: Option<String>,
     // Summary: Option<String>,
     // Description: Option<String>,
-    // introduced_in: Option<String>,
+    introduced_in: String,
     dep: Vec<String>,
     // dropped: bool,
     // fullname: String,
@@ -55,11 +55,15 @@ struct Parameters {
 #[derive(Resource)]
 struct EntityNameMap(HashMap<String, Entity>);
 
+#[derive(Resource)]
+struct ColorLayerMap(HashMap<String, Color>);
+
 fn spawn_nodes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut names_map: ResMut<EntityNameMap>,
+    mut color_map: ResMut<ColorLayerMap>,
 ) {
     let shape = meshes.add(Circle::new(100.0));
 
@@ -87,17 +91,24 @@ fn spawn_nodes(
     // let nodes: Vec<Node> = serde_json::from_str(test_string).unwrap();
 
     for node in nodes.into_iter() {
-        let start_pos = Vec3::new(
-            rng.random_range(-50000.0..50000.0),
-            rng.random_range(-50000.0..50000.0),
-            0.0,
-        );
+        let new_node = node.clone();
+        let mut color = Color::BLACK;
+        if !color_map.0.contains_key(&new_node.introduced_in) {
+            color = Color::hsl(rng.random_range(0.0..360.0), 0.7, 0.5);
+            color_map.0.insert(new_node.introduced_in, color);
+        } else {
+            color = *color_map.0.get(&new_node.introduced_in).unwrap();
+        }
 
         let id = commands
             .spawn((
                 Mesh2d(shape.clone()),
-                MeshMaterial2d(materials.add(Color::hsl(rng.random_range(0.0..360.0), 0.7, 0.5))),
-                Transform::from_translation(start_pos),
+                MeshMaterial2d(materials.add(color)),
+                Transform::from_xyz(
+                    rng.random_range(-50000.0..50000.0),
+                    rng.random_range(-50000.0..50000.0),
+                    1.0,
+                ),
                 node.clone(),
                 Displacement(Vec3::ZERO),
             ))
@@ -116,20 +127,32 @@ fn spawn_nodes(
     }
 }
 
-fn spawn_edges(
-    mut commands: Commands,
-    nodes: Query<&Node, With<Node>>,
-    names_map: Res<EntityNameMap>,
-) {
+fn spawn_edges(mut commands: Commands, nodes: Query<&Node>, names_map: Res<EntityNameMap>) {
     let mut n_edges = 0;
     for node in &nodes {
         for dep in node.dep.clone() {
             // println!("from {}", &node.Name);
             // println!("to {}", &dep);
+            if &dep == "glibc" {
+                continue;
+            }
+            if &node.Name == "glibc" {
+                continue;
+            }
+
             let from = names_map.0[&node.Name];
             let to = names_map.0[&dep];
 
-            commands.spawn(Edge { from, to });
+            commands.spawn((
+                Edge { from, to },
+                Sprite {
+                    color: Color::WHITE,
+                    custom_size: Some(Vec2::ZERO),
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, 0.0),
+            ));
+
             n_edges += 1;
         }
     }
@@ -139,13 +162,13 @@ fn spawn_edges(
 fn ui_forces(mut ui_state: ResMut<Parameters>, mut contexts: EguiContexts) -> Result {
     egui::Window::new("Forces").show(contexts.ctx_mut()?, |ui| {
         ui.label("Repulsion factor");
-        ui.add(egui::Slider::new(&mut ui_state.repulsion, 90.0..=400.0));
+        ui.add(egui::Slider::new(&mut ui_state.repulsion, 90.0..=10000.0));
 
         ui.label("Attraction factor");
-        ui.add(egui::Slider::new(&mut ui_state.attraction, 0.01..=1.0));
+        ui.add(egui::Slider::new(&mut ui_state.attraction, 0.01..=10.0));
 
         ui.label("Center factor");
-        ui.add(egui::Slider::new(&mut ui_state.center, 0.00001..=0.1));
+        ui.add(egui::Slider::new(&mut ui_state.center, 0.000001..=0.1));
 
         ui.label("k");
         ui.add(egui::Slider::new(&mut ui_state.k, 0.1..=10.0));
@@ -156,22 +179,32 @@ fn ui_forces(mut ui_state: ResMut<Parameters>, mut contexts: EguiContexts) -> Re
         ui.label("max diameter");
         ui.add(egui::Slider::new(
             &mut ui_state.max_diameter,
-            1000.0..=50000.0,
+            1000.0..=500000.0,
         ));
     });
     Ok(())
 }
 
-fn draw_edges(edges: Query<&Edge>, nodes: Query<&Transform, With<Node>>, mut gizmos: Gizmos) {
-    for edge in edges.iter() {
+fn draw_edges(
+    mut sprite_query: Query<(&mut Transform, &mut Sprite, &Edge), (With<Sprite>, Without<Node>)>,
+    nodes: Query<&Transform, With<Node>>,
+) {
+    sprite_query.iter_mut().for_each(|(mut tr, mut spr, edge)| {
         if let (Ok(from_tf), Ok(to_tf)) = (nodes.get(edge.from), nodes.get(edge.to)) {
-            gizmos.line_2d(
-                from_tf.translation.truncate(),
-                to_tf.translation.truncate(),
-                Color::WHITE,
-            );
+            let start = from_tf.translation;
+            let end = to_tf.translation;
+
+            let length = start.distance(end);
+            let diff = start - end;
+            let theta = diff.y.atan2(diff.x);
+            let midpoint = (start + end) / 2.;
+
+            spr.custom_size = Some(Vec2::new(length, 0.00000001 * length * length));
+
+            *tr = Transform::from_xyz(midpoint.x, midpoint.y, -1.0)
+                .with_rotation(Quat::from_rotation_z(theta));
         }
-    }
+    });
 }
 
 fn repulsion(params: Res<Parameters>, mut query: Query<(&Transform, &mut Displacement)>) {
@@ -242,6 +275,7 @@ impl Plugin for GraphPlugin {
             max_diameter: 30000.0,
         });
         app.insert_resource(EntityNameMap(HashMap::new()));
+        app.insert_resource(ColorLayerMap(HashMap::new()));
         app.add_systems(Startup, (spawn_nodes, spawn_edges).chain());
         app.add_systems(EguiPrimaryContextPass, ui_forces);
         app.add_systems(
