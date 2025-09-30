@@ -91,8 +91,9 @@ def process_layers [working_dir: string, image: string, meta: string] {
             | insert "dep" (
                 rpm $dbpath -qR $package
                   | lines
-                  | par-each -k {|cap| (rpm -q --whatprovides ($cap | split row ' ').0) | default null}
+                  | par-each -k {|cap| (rpm -q --qf '%{NAME}\n' --whatprovides ($cap | split row ' ').0) | default null}
                   | where (str contains "no package provides" | not $in)
+                  | where (str contains "\n" | not $in)
                   | uniq
               )
             | insert "dropped" false
