@@ -11,6 +11,19 @@ pub struct Parameters {
     pub max_diameter: f32,
 }
 
+impl Default for Parameters {
+    fn default() -> Self {
+        Parameters {
+            repulsion: 10000.0,
+            attraction: 10.0,
+            center: 0.00001,
+            k: 10.0,
+            max_step: 10.0,
+            max_diameter: 500000.0,
+        }
+    }
+}
+
 fn ui_forces(mut ui_state: ResMut<Parameters>, mut contexts: EguiContexts) -> Result {
     egui::Window::new("Forces").show(contexts.ctx_mut()?, |ui| {
         ui.label("Repulsion factor");
@@ -41,14 +54,7 @@ pub struct GraphUiPlugin;
 
 impl Plugin for GraphUiPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Parameters {
-            repulsion: 300.0,
-            attraction: 0.01,
-            center: 0.00001,
-            k: 10000.0 / 2.0 * bevy::math::ops::sqrt(3.1415 / 2000 as f32),
-            max_step: 10.0,
-            max_diameter: 30000.0,
-        });
+        app.insert_resource(Parameters::default());
         app.add_plugins(EguiPlugin::default());
         app.add_systems(EguiPrimaryContextPass, ui_forces);
     }

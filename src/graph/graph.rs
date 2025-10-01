@@ -3,9 +3,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::BufReader;
-use std::process;
 
 pub struct GraphPlugin;
 
@@ -76,31 +74,23 @@ fn spawn_nodes(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut names_map: ResMut<EntityNameMap>,
     mut color_map: ResMut<ColorLayerMap>,
+    load_params: Res<crate::LoadParams>,
 ) {
+    let mut nodes: Vec<Node> = Vec::new();
+    if let Some(raw_json) = &load_params.opt_raw_json {
+        let mut nodes_raw: Vec<Node> = serde_json::from_str(&raw_json).unwrap();
+        nodes.append(&mut nodes_raw);
+    }
+
+    if let Some(file) = &load_params.opt_file {
+        let reader = BufReader::new(file);
+        let mut nodes_file: Vec<Node> = serde_json::from_reader(reader).unwrap();
+        nodes.append(&mut nodes_file);
+    }
+
     let shape = meshes.add(Circle::new(100.0));
 
     let mut rng = rand::rng();
-
-    let file = File::open("packages-map.json").unwrap_or_else(|_| {
-        process::exit(1);
-    });
-    let reader = BufReader::new(file);
-
-    let nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
-
-    // let test_string = r#"
-    //    [
-    //        {
-    //            "Name": "a",
-    //            "dep": ["b"]
-    //        },
-    //        {
-    //            "Name": "b",
-    //            "dep": []
-    //        }
-    //    ]
-    // "#;
-    // let nodes: Vec<Node> = serde_json::from_str(test_string).unwrap();
 
     for node in nodes.into_iter() {
         let new_node = node.clone();
@@ -238,4 +228,118 @@ fn apply_physics(params: Res<Parameters>, mut query: Query<(&mut Transform, &mut
             transform.translation = (pos / r * params.max_diameter / 2.0).extend(0.0);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parameters;
+    use super::*;
+    use bevy::{
+        render::{RenderPlugin, settings::WgpuSettings},
+        winit::{WakeUp, WinitPlugin},
+    };
+
+    const ITER_UPDATE: usize = 100;
+
+    macro_rules! bevy_two_nodes_graph_test {
+        (
+            params = { $($pfield:ident : $pvalue:expr),* $(,)? },
+            update_systems = [ $( $update_sys:path ),* $(,)? ],
+            new_dist $cmp:tt prev_dist $(,)?
+        ) => {
+            {
+                let mut winit = WinitPlugin::<WakeUp>::default();
+                winit.run_on_any_thread = true;
+
+                let mut app = App::new();
+
+                app.add_plugins(
+                    DefaultPlugins
+                        .set(RenderPlugin {
+                            render_creation: WgpuSettings {
+                                backends: None,
+                                ..default()
+                            }
+                            .into(),
+                            ..default()
+                        })
+                        .set(winit),
+                )
+                .insert_resource(crate::LoadParams {
+                    opt_raw_json: Some(
+                        r#"
+                           [
+                               {
+                                   "Name": "a",
+                                   "dep": ["b"],
+                                   "introduced_in": "0"
+                               },
+                               {
+                                   "Name": "b",
+                                   "dep": [],
+                                   "introduced_in": "1"
+                               }
+                           ]
+                        "#
+                        .into(),
+                    ),
+                    opt_file: None,
+                })
+                .insert_resource(Parameters {
+                    $($pfield : $pvalue),*,
+                    ..default()
+                })
+                .insert_resource(EntityNameMap(HashMap::new()))
+                .insert_resource(ColorLayerMap(HashMap::new()))
+                .add_systems(Startup, (spawn_nodes, spawn_edges).chain())
+                .add_systems(Update, ( $($update_sys),* , apply_physics).chain());
+
+                app.update();
+
+                let translations: Vec<Vec3> = app
+                    .world_mut()
+                    .query_filtered::<&Transform, With<Node>>()
+                    .iter(app.world())
+                    .map(|&tr| tr.translation)
+                    .collect();
+                assert_eq!(translations.len(), 2);
+
+                let mut prev_distance = translations[0].distance(translations[1]);
+
+                for _ in 0..ITER_UPDATE {
+                    app.update();
+
+                    let translations: Vec<Vec3> = app
+                        .world_mut()
+                        .query_filtered::<&Transform, With<Node>>()
+                        .iter(app.world())
+                        .map(|&tr| tr.translation)
+                        .collect();
+                    let new_distance = translations[0].distance(translations[1]);
+
+                    assert!(new_distance $cmp prev_distance);
+
+                    prev_distance = new_distance;
+                }
+            }
+        };
+    }
+
+    #[test]
+    fn check_repulsion() {
+        bevy_two_nodes_graph_test!(
+            params = {repulsion: 100.0, attraction: 0.0, center: 0.0},
+            update_systems = [repulsion],
+            new_dist > prev_dist,
+        );
+    }
+
+    #[test]
+    fn check_attraction() {
+        bevy_two_nodes_graph_test!(
+            params = {repulsion: 0.0, attraction: 10.0, center: 0.0},
+            update_systems = [attraction],
+            new_dist < prev_dist,
+        );
+    }
 }
