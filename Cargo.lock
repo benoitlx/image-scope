@@ -448,7 +448,7 @@ dependencies = [
  "ron",
  "serde",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "thread_local",
  "tracing",
  "uuid",
@@ -471,7 +471,7 @@ dependencies = [
  "ctrlc",
  "downcast-rs 2.0.2",
  "log",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "variadics_please",
  "wasm-bindgen",
  "web-sys",
@@ -509,7 +509,7 @@ dependencies = [
  "ron",
  "serde",
  "stackfuture",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
  "uuid",
  "wasm-bindgen",
@@ -559,7 +559,7 @@ dependencies = [
  "derive_more",
  "encase",
  "serde",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "wgpu-types",
 ]
 
@@ -589,7 +589,7 @@ dependencies = [
  "radsort",
  "serde",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
 ]
 
@@ -602,6 +602,30 @@ dependencies = [
  "bevy_macro_utils",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "bevy_dev_tools"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f29a3abf7b8e0148ef4f74a4ec63f4efb00a3d62aba361921a5d259410556d5"
+dependencies = [
+ "bevy_app",
+ "bevy_asset",
+ "bevy_color",
+ "bevy_diagnostic",
+ "bevy_ecs",
+ "bevy_input",
+ "bevy_picking",
+ "bevy_reflect",
+ "bevy_render",
+ "bevy_state",
+ "bevy_text",
+ "bevy_time",
+ "bevy_ui",
+ "bevy_utils",
+ "bevy_window",
+ "tracing",
 ]
 
 [[package]]
@@ -655,7 +679,7 @@ dependencies = [
  "nonmax",
  "serde",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "variadics_please",
 ]
 
@@ -762,7 +786,7 @@ dependencies = [
  "bevy_time",
  "bevy_utils",
  "gilrs",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
 ]
 
@@ -834,7 +858,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
 ]
 
@@ -861,7 +885,7 @@ dependencies = [
  "rectangle-pack",
  "ruzstd",
  "serde",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
  "wgpu-types",
 ]
@@ -881,7 +905,7 @@ dependencies = [
  "derive_more",
  "log",
  "smol_str",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -897,7 +921,7 @@ dependencies = [
  "bevy_reflect",
  "bevy_window",
  "log",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -914,6 +938,7 @@ dependencies = [
  "bevy_color",
  "bevy_core_pipeline",
  "bevy_derive",
+ "bevy_dev_tools",
  "bevy_diagnostic",
  "bevy_ecs",
  "bevy_gilrs",
@@ -989,7 +1014,7 @@ dependencies = [
  "rand_distr",
  "serde",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "variadics_please",
 ]
 
@@ -1013,7 +1038,7 @@ dependencies = [
  "bytemuck",
  "hexasphere",
  "serde",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
  "wgpu-types",
 ]
@@ -1067,7 +1092,7 @@ dependencies = [
  "radsort",
  "smallvec",
  "static_assertions",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
 ]
 
@@ -1141,7 +1166,7 @@ dependencies = [
  "serde",
  "smallvec",
  "smol_str",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "uuid",
  "variadics_please",
  "wgpu-types",
@@ -1204,7 +1229,7 @@ dependencies = [
  "send_wrapper",
  "serde",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
  "variadics_please",
  "wasm-bindgen",
@@ -1241,8 +1266,20 @@ dependencies = [
  "bevy_utils",
  "derive_more",
  "serde",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "uuid",
+]
+
+[[package]]
+name = "bevy_spatial"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97c520d6901718c2fdeddce2c60218a803714dfe1f346a5ab8cdbd7568094768"
+dependencies = [
+ "bevy",
+ "kd-tree",
+ "num-traits",
+ "typenum",
 ]
 
 [[package]]
@@ -1350,7 +1387,7 @@ dependencies = [
  "serde",
  "smallvec",
  "sys-locale",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
  "unicode-bidi",
 ]
@@ -1385,7 +1422,7 @@ dependencies = [
  "bevy_utils",
  "derive_more",
  "serde",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -1419,7 +1456,7 @@ dependencies = [
  "nonmax",
  "smallvec",
  "taffy",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tracing",
 ]
 
@@ -2619,9 +2656,9 @@ dependencies = [
 
 [[package]]
 name = "gilrs-core"
-version = "0.6.5"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3579883f2f2419e20a55b19ce7cc7bd96b50321ad99082a1637a6c01631ee82"
+checksum = "be11a71ac3564f6965839e2ed275bf4fcf5ce16d80d396e1dfdb7b2d80bd587e"
 dependencies = [
  "core-foundation 0.10.1",
  "inotify",
@@ -3158,6 +3195,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kd-tree"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10cba89e4275e55bed515724fd6d7888861c1afb9e3a1ef2c4b001b1894b41c7"
+dependencies = [
+ "num-traits",
+ "ordered-float 5.1.0",
+ "paste",
+ "rayon",
+ "typenum",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3420,7 +3470,7 @@ dependencies = [
  "spirv",
  "strum",
  "termcolor",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "unicode-xid",
 ]
 
@@ -3980,6 +4030,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "5.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f4779c6901a562440c3786d08192c6fbda7c1c2060edd10006b05ee35d10f2d"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4241,9 +4300,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.40"
+version = "1.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1885c039570dc00dcb4ff087a89e185fd56bae234ddc7f056a945bf36467248d"
+checksum = "ce25767e7b499d1b604768e7cde645d14cc8584231ea6b295e9c9eb22c02e1d1"
 dependencies = [
  "proc-macro2",
 ]
@@ -4527,6 +4586,7 @@ dependencies = [
  "bevy",
  "bevy_egui 0.36.0",
  "bevy_pancam",
+ "bevy_spatial",
  "rand 0.9.2",
  "serde",
  "serde_json",
@@ -4977,11 +5037,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.16"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3467d614147380f2e4e374161426ff399c91084acd2363eaf549172b3d5e60c0"
+checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
 dependencies = [
- "thiserror-impl 2.0.16",
+ "thiserror-impl 2.0.17",
 ]
 
 [[package]]
@@ -4997,9 +5057,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.16"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c5e1be1c48b9172ee610da68fd9cd2770e7a4056cb3fc98710ee6906f0c7960"
+checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5259,6 +5319,12 @@ name = "typeid"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
+
+[[package]]
+name = "typenum"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "typewit"
@@ -5705,7 +5771,7 @@ dependencies = [
  "raw-window-handle",
  "rustc-hash 1.1.0",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "wgpu-hal",
  "wgpu-types",
 ]
@@ -5740,7 +5806,7 @@ dependencies = [
  "ndk-sys 0.5.0+25.2.9519653",
  "objc",
  "once_cell",
- "ordered-float",
+ "ordered-float 4.6.0",
  "parking_lot",
  "profiling",
  "range-alloc",
@@ -5748,7 +5814,7 @@ dependencies = [
  "renderdoc-sys",
  "rustc-hash 1.1.0",
  "smallvec",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "wasm-bindgen",
  "web-sys",
  "wgpu-types",

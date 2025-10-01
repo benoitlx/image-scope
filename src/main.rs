@@ -1,4 +1,5 @@
 use crate::graph::GraphPlugin;
+use bevy::dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin};
 use bevy::prelude::*;
 use bevy_pancam::{PanCam, PanCamPlugin};
 use std::fs::File;
@@ -23,6 +24,15 @@ fn main() {
             opt_file: Some(file),
         })
         .add_plugins(DefaultPlugins)
+        .add_plugins(FpsOverlayPlugin {
+            config: FpsOverlayConfig {
+                text_config: TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                ..default()
+            },
+        })
         .add_plugins(GraphPlugin)
         .add_plugins(PanCamPlugin::default())
         .add_systems(Startup, setup)
