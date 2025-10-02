@@ -1,5 +1,6 @@
 use super::graph_ui::{GraphUiPlugin, Parameters};
 use bevy::prelude::*;
+use bevy_spatial::{AutomaticUpdate, SpatialAccess, kdtree::KDTree2};
 use rand::Rng;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -48,9 +49,16 @@ struct EntityNameMap(HashMap<String, Entity>);
 #[derive(Resource)]
 struct ColorLayerMap(HashMap<String, Color>);
 
+#[derive(Component, Default)]
+struct TrackedByKDTree;
+
 impl Plugin for GraphPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(GraphUiPlugin);
+        app.add_plugins(
+            AutomaticUpdate::<TrackedByKDTree>::new()
+                .with_spatial_ds(bevy_spatial::SpatialStructure::KDTree2),
+        );
         app.insert_resource(EntityNameMap(HashMap::new()));
         app.insert_resource(ColorLayerMap(HashMap::new()));
         app.add_systems(Startup, (spawn_nodes, spawn_edges).chain());
@@ -92,6 +100,7 @@ fn spawn_nodes(
 
     let mut rng = rand::rng();
 
+    let mut i = 0;
     for node in nodes.into_iter() {
         let new_node = node.clone();
 
@@ -105,6 +114,7 @@ fn spawn_nodes(
 
         let id = commands
             .spawn((
+                TrackedByKDTree,
                 Mesh2d(shape.clone()),
                 MeshMaterial2d(materials.add(color)),
                 Transform::from_xyz(
@@ -127,7 +137,10 @@ fn spawn_nodes(
             })
             .id();
         names_map.0.insert(node.Name, id.clone());
+
+        i += 1;
     }
+    println!("Number of nodes {i}");
 }
 
 fn spawn_edges(mut commands: Commands, nodes: Query<&Node>, names_map: Res<EntityNameMap>) {
@@ -175,7 +188,13 @@ fn draw_edges(
     });
 }
 
-fn repulsion(params: Res<Parameters>, mut query: Query<(&Transform, &mut Displacement)>) {
+type NNTree = KDTree2<TrackedByKDTree>;
+
+fn repulsion(
+    tree: Res<NNTree>,
+    params: Res<Parameters>,
+    mut query: Query<(&Transform, &mut Displacement)>,
+) {
     let mut iter = query.iter_combinations_mut();
     while let Some([(transform_a, mut disp_a), (transform_b, mut disp_b)]) = iter.fetch_next() {
         let pos_a = transform_a.translation.truncate();
