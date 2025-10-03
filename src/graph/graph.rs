@@ -114,6 +114,7 @@ fn spawn_nodes(
                 ),
                 node.clone(),
                 Displacement(Vec3::ZERO),
+                Pickable::default(),
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -125,6 +126,7 @@ fn spawn_nodes(
                     Transform::from_xyz(50.0, 50.0, 0.0),
                 ));
             })
+            .observe(hover::<Pointer<Over>>())
             .id();
         names_map.0.insert(node.Name, id.clone());
     }
@@ -228,6 +230,16 @@ fn apply_physics(params: Res<Parameters>, mut query: Query<(&mut Transform, &mut
             transform.translation = (pos / r * params.max_diameter / 2.0).extend(0.0);
         }
     });
+}
+
+fn hover<E: Clone + Reflect>()
+-> impl Fn(Trigger<E>, Query<&mut MeshMaterial2d<ColorMaterial>>, ResMut<Assets<ColorMaterial>>) {
+    move |ev, mut query, mut materials| {
+        println!("Hello");
+        if let Ok(mut mesh) = query.get_mut(ev.target()) {
+            *mesh = MeshMaterial2d(materials.add(Color::WHITE));
+        }
+    }
 }
 
 #[cfg(test)]
