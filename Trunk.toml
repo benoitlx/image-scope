@@ -1,0 +1,16 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+# Seulement les sources : `trunk serve` ne reconstruit pas quand `image-scope inspect`
+# réécrit les JSON ou extrait une image. (Trunk refuse les chemins absents,
+# donc pas de liste `ignore` avec image_dir.)
+[watch]
+watch = ["src", "index.html", "Cargo.toml", "Trunk.toml"]
+
+# Copie les données de l'image (si présentes) à côté de la page :
+# elles sont chargées par défaut quand l'URL n'a pas de `?data=`.
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "for f in packages-map.json security-advisories.json; do [ -f \"$f\" ] && cp \"$f\" \"$TRUNK_STAGING_DIR/\"; done; true"]

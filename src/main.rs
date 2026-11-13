@@ -1,29 +1,48 @@
+#[cfg(feature = "viewer")]
 use crate::graph::GraphPlugin;
+#[cfg(feature = "viewer")]
 use bevy::dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin};
+#[cfg(feature = "viewer")]
 use bevy::prelude::*;
+#[cfg(feature = "viewer")]
 use bevy_pancam::{PanCam, PanCamPlugin};
-use std::fs::File;
-use std::process;
 
+#[cfg(feature = "viewer")]
 mod graph;
-
-#[derive(Resource)]
-pub struct LoadParams {
-    opt_raw_json: Option<String>,
-    opt_file: Option<File>,
-}
+mod model;
+#[cfg(not(target_arch = "wasm32"))]
+mod scan;
 
 fn main() {
-    let file = File::open("packages-map.json").unwrap_or_else(|_| {
-        process::exit(1);
-    });
+    // Sous-commandes (inspect, advisories…) : pas de fenêtre.
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(code) = scan::run_cli(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        std::process::exit(code);
+    }
 
+    #[cfg(feature = "viewer")]
+    run_viewer();
+
+    #[cfg(not(feature = "viewer"))]
+    {
+        eprintln!("This build has no viewer (--no-default-features). See `image-scope help`.");
+        std::process::exit(2);
+    }
+}
+
+#[cfg(feature = "viewer")]
+fn run_viewer() {
     App::new()
-        .insert_resource(LoadParams {
-            opt_raw_json: None,
-            opt_file: Some(file),
-        })
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "image-scope".into(),
+                // Web : dessine dans le <canvas id="bevy"> de index.html, à sa taille.
+                canvas: Some("#bevy".into()),
+                fit_canvas_to_parent: true,
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugins(FpsOverlayPlugin {
             config: FpsOverlayConfig {
                 text_config: TextFont {
@@ -39,6 +58,7 @@ fn main() {
         .run();
 }
 
+#[cfg(feature = "viewer")]
 fn setup(mut commands: Commands) {
     commands.spawn((
         Camera2d,

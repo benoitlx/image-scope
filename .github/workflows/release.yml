@@ -1,0 +1,59 @@
+# Publie, pour chaque tag `v*`, ce dont la CI de custom-desktop-image a besoin :
+# - image-scope-x86_64-linux.tar.gz : la ligne de commande seule (sans visionneuse),
+# - image-scope-web.tar.gz : la visionneuse web (site statique, à compléter par les données).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  cli:
+    name: Command line (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --no-default-features
+      - run: cargo build --locked --release --no-default-features
+      - run: tar -czf image-scope-x86_64-linux.tar.gz -C target/release image-scope
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: image-scope-x86_64-linux.tar.gz
+
+  web:
+    name: Web viewer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install trunk
+        run: curl -sSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin
+      # `--public-url ./` : chemins relatifs, le site est servi sous /<dépôt>/ sur GitHub Pages.
+      - run: trunk build --release --cargo-profile web --public-url ./
+      - run: tar -czf image-scope-web.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: image-scope-web.tar.gz
+
+  release:
+    needs: [cli, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            image-scope-x86_64-linux.tar.gz
+            image-scope-web.tar.gz

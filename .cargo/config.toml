@@ -1,0 +1,3 @@
+# rand → getrandom : source d'aléa du navigateur pour la cible web.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

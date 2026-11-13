@@ -3,14 +3,78 @@ name = "rpm-layer-scope"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "image-scope"
+path = "src/main.rs"
+
+[features]
+# La visionneuse (Bevy). Sans elle (`--no-default-features`), il ne reste que la ligne
+# de commande (`inspect`, `advisories`, `index`…), rapide à compiler, pour la CI.
+default = ["viewer"]
+viewer = ["dep:bevy", "dep:bevy_egui", "dep:bevy_pancam", "dep:petgraph", "dep:rand"]
+
 [dependencies]
-bevy = { version = "0.16.1", features = ["dynamic_linking", "bevy_dev_tools"] }
-bevy_egui = "0.36.0"
-bevy_pancam = { version = "0.18.0", features = ["bevy_egui"] }
-bevy_spatial = "0.11.0"
-rand = "0.9.2"
+# Seulement ce qui sert (2D, texte, gizmos, picking, UI de l'overlay FPS) :
+# les features par défaut (3D, audio, glTF…) quadruplent la taille du wasm.
+bevy = { version = "0.16.1", optional = true, default-features = false, features = [
+    "std",
+    "async_executor",
+    "multi_threaded",
+    "bevy_asset",
+    "bevy_color",
+    "bevy_core_pipeline",
+    "bevy_dev_tools",
+    "bevy_gizmos",
+    "bevy_log",
+    "bevy_mesh_picking_backend",
+    "bevy_picking",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_window",
+    "bevy_winit",
+    "custom_cursor",
+    "default_font",
+    "webgl2",
+] }
+bevy_egui = { version = "0.36.0", optional = true }
+bevy_pancam = { version = "0.18.0", optional = true }
+petgraph = { version = "0.7.1", optional = true }
+rand = { version = "0.9.2", optional = true }
 serde = { version = "1.0.227", features = ["derive"] }
 serde_json = "1.0.145"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { version = "0.16.1", optional = true, features = ["dynamic_linking", "wayland", "x11"] }
+# Analyse d'images (`image-scope inspect`) : registre OCI, couches, base rpm sqlite.
+flate2 = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+tar = "0.4"
+ureq = { version = "3", features = ["json"] }
+zstd = "0.13"
+
+# Version web (`trunk serve`, voir README).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Blob",
+    "DataTransfer",
+    "Document",
+    "DragEvent",
+    "File",
+    "FileList",
+    "History",
+    "Location",
+    "Response",
+    "Url",
+    "UrlSearchParams",
+    "Window",
+] }
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
@@ -19,3 +83,12 @@ opt-level = 1
 # Enable a large amount of optimization in the dev profile for dependencies.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Build web publié (`trunk build --release --cargo-profile web`) :
+# optimisé pour la taille, le wasm est téléchargé à chaque visite.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = "debuginfo"

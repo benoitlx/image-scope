@@ -1,71 +1,145 @@
-use super::graph_ui::{GraphUiPlugin, Parameters};
+use super::analysis::GraphAnalysis;
+use super::coloring::{ColoringPlugin, LayerColors, build_origin_palette};
+use super::graph_ui::{GraphUiPlugin, Parameters, Simulation};
+use super::interaction::{DragState, Hovered, InteractionPlugin, Pinned};
+use super::loading::{AdvisoriesData, LoadingPlugin, PackagesData};
+use super::origin::Origin;
+use super::package_info::{PackageInfoPlugin, Selection, SelectionInsight};
+use super::quadtree::QuadTree;
+use super::reduction::transitive_reduction;
+use super::search::{Search, SearchPlugin};
+use super::security::load_security;
 use bevy::prelude::*;
 use rand::Rng;
-use serde::Deserialize;
 use std::collections::HashMap;
-use std::io::BufReader;
 
 pub struct GraphPlugin;
 
-#[derive(Component, Deserialize, Clone, Debug)]
-#[allow(non_snake_case)]
-struct Node {
-    Name: String,
-    // Version: String,
-    // Release: Option<String>,
-    // Arch: Option<String>,
-    // Installtime: Option<usize>,
-    // Group: Option<String>,
-    // Size: Option<usize>,
-    // License: Option<String>,
-    // Sourcerpm: Option<String>,
-    // Buildtime: Option<usize>,
-    // Buildhost: Option<String>,
-    // Packager: Option<String>,
-    // Vendor: Option<String>,
-    // Url: Option<String>,
-    // Bugurl: Option<String>,
-    // Summary: Option<String>,
-    // Description: Option<String>,
-    introduced_in: String,
-    dep: Vec<String>,
-    // dropped: bool,
-    // fullname: String,
-}
+pub(crate) use crate::model::Node;
 
 #[derive(Component)]
 struct Displacement(Vec3);
 
 #[derive(Component)]
-struct Edge {
-    from: Entity,
-    to: Entity,
+pub(super) struct Edge {
+    pub from: Entity,
+    pub to: Entity,
+    /// Impliquée par un autre chemin (voir `reduction`).
+    pub redundant: bool,
+}
+
+impl Edge {
+    fn is_active(&self, params: &Parameters) -> bool {
+        !(params.transitive_reduction && self.redundant)
+    }
 }
 
 #[derive(Resource)]
 struct EntityNameMap(HashMap<String, Entity>);
 
-#[derive(Resource)]
-struct ColorLayerMap(HashMap<String, Color>);
+const EDGE_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.15);
+const EDGE_DIMMED_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.04);
+const DEPENDENCY_COLOR: Color = Color::srgb(1.0, 0.6, 0.2);
+const DEPENDENT_COLOR: Color = Color::srgb(0.3, 0.8, 1.0);
+const SELECTION_COLOR: Color = Color::srgb(1.0, 1.0, 0.3);
+const ROOT_PATH_COLOR: Color = Color::srgb(1.0, 0.3, 0.9);
+const SEARCH_COLOR: Color = Color::srgb(0.2, 0.9, 1.0);
+const HOVER_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.7);
+const PINNED_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.5);
+/// Couleur des paquets racines (ceux dont rien ne dépend).
+pub(super) const ROOT_COLOR: Color = Color::srgb(1.0, 0.84, 0.0);
+const ROOT_SCALE: f32 = 1.6;
+
+fn simulation_unlocked(simulation: Res<Simulation>) -> bool {
+    !simulation.locked
+}
+
+/// Pas minimal (relatif à la longueur d'arête) : la simulation ne s'arrête jamais
+/// d'elle-même et reste réactive, sans trembler une fois stabilisée.
+const MIN_STEP: f32 = 1e-3;
 
 impl Plugin for GraphPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(GraphUiPlugin);
+        app.add_plugins((
+            LoadingPlugin,
+            GraphUiPlugin,
+            PackageInfoPlugin,
+            InteractionPlugin,
+            ColoringPlugin,
+            SearchPlugin,
+        ));
         app.insert_resource(EntityNameMap(HashMap::new()));
-        app.insert_resource(ColorLayerMap(HashMap::new()));
-        app.add_systems(Startup, (spawn_nodes, spawn_edges).chain());
+        // Graphe reconstruit à chaque nouveau jeu de paquets (démarrage, glisser-déposer…),
+        // index de sécurité recalculé aussi quand seuls les avis changent.
         app.add_systems(
             Update,
             (
-                attraction,
-                repulsion,
-                center_force,
-                apply_physics,
+                (clear_graph, spawn_nodes, spawn_edges, build_origin_palette)
+                    .chain()
+                    .run_if(resource_exists_and_changed::<PackagesData>),
+                load_security.run_if(security_data_changed),
+            )
+                .chain()
+                .in_set(RebuildGraph),
+        );
+        app.add_systems(
+            Update,
+            (
+                (attraction, repulsion, center_force, apply_physics)
+                    .chain()
+                    .run_if(simulation_unlocked),
                 draw_edges,
             )
-                .chain(),
+                .chain()
+                .after(RebuildGraph),
         );
     }
+}
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct RebuildGraph;
+
+/// Une seule condition (et pas `a.or(b)`) : `or` n'évalue pas `b` quand `a` est vrai,
+/// `b` verrait alors le même changement à la frame suivante.
+fn security_data_changed(
+    packages: Option<Res<PackagesData>>,
+    advisories: Option<Res<AdvisoriesData>>,
+) -> bool {
+    packages.as_ref().is_some_and(|p| p.is_changed())
+        || (packages.is_some() && advisories.is_some_and(|a| a.is_changed()))
+}
+
+/// Supprime le graphe affiché et remet à zéro l'état qui en dépend.
+#[allow(clippy::too_many_arguments)]
+fn clear_graph(
+    mut commands: Commands,
+    nodes: Query<Entity, With<Node>>,
+    edges: Query<Entity, With<Edge>>,
+    mut cameras: Query<&mut Transform, (With<Camera2d>, Without<Node>)>,
+    mut names_map: ResMut<EntityNameMap>,
+    mut layer_colors: ResMut<LayerColors>,
+    mut selection: ResMut<Selection>,
+    mut insight: ResMut<SelectionInsight>,
+    mut search: ResMut<Search>,
+    mut hovered: ResMut<Hovered>,
+    mut drag: ResMut<DragState>,
+    mut simulation: ResMut<Simulation>,
+    params: Res<Parameters>,
+) {
+    for entity in nodes.iter().chain(&edges) {
+        commands.entity(entity).despawn();
+    }
+    for mut camera in &mut cameras {
+        camera.translation = Vec3::new(0.0, 0.0, camera.translation.z);
+    }
+    names_map.0.clear();
+    layer_colors.0.clear();
+    *selection = default();
+    *insight = default();
+    *search = default();
+    *hovered = default();
+    *drag = default();
+    simulation.reheat(&params);
 }
 
 fn spawn_nodes(
@@ -73,51 +147,49 @@ fn spawn_nodes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut names_map: ResMut<EntityNameMap>,
-    mut color_map: ResMut<ColorLayerMap>,
-    load_params: Res<crate::LoadParams>,
+    mut layer_colors: ResMut<LayerColors>,
+    data: Res<PackagesData>,
+    params: Res<Parameters>,
 ) {
-    let mut nodes: Vec<Node> = Vec::new();
-    if let Some(raw_json) = &load_params.opt_raw_json {
-        let mut nodes_raw: Vec<Node> = serde_json::from_str(&raw_json).unwrap();
-        nodes.append(&mut nodes_raw);
-    }
-
-    if let Some(file) = &load_params.opt_file {
-        let reader = BufReader::new(file);
-        let mut nodes_file: Vec<Node> = serde_json::from_reader(reader).unwrap();
-        nodes.append(&mut nodes_file);
-    }
+    let nodes = data.nodes.clone();
 
     let shape = meshes.add(Circle::new(100.0));
 
     let mut rng = rand::rng();
 
+    // Disque dont l'aire est proportionnelle au nombre de nœuds : chaque nœud
+    // démarre à environ une longueur d'arête de ses voisins.
+    // Bornée pour rester valable si l'attraction ou la répulsion vaut 0.
+    let spawn_radius = (params.natural_length().max(params.k) * (nodes.len() as f32).sqrt() / 2.0)
+        .min(params.max_diameter / 4.0);
+
     for node in nodes.into_iter() {
-        let new_node = node.clone();
+        // Couleur provisoire : `coloring::apply_colors` l'ajuste selon le mode choisi.
+        let color = *layer_colors
+            .0
+            .entry(node.introduced_in.clone())
+            .or_insert_with(|| Color::hsl(rng.random_range(0.0..360.0), 0.7, 0.5));
+        let material = materials.add(color);
+        let origin = Origin::classify(&node);
 
-        let color;
-        if !color_map.0.contains_key(&new_node.introduced_in) {
-            color = Color::hsl(rng.random_range(0.0..360.0), 0.7, 0.5);
-            color_map.0.insert(new_node.introduced_in, color);
-        } else {
-            color = *color_map.0.get(&new_node.introduced_in).unwrap();
-        }
-
+        let name = node.Name.clone();
         let id = commands
             .spawn((
                 Mesh2d(shape.clone()),
-                MeshMaterial2d(materials.add(color)),
-                Transform::from_xyz(
-                    rng.random_range(-50000.0..50000.0),
-                    rng.random_range(-50000.0..50000.0),
-                    1.0,
+                MeshMaterial2d(material),
+                Transform::from_translation(
+                    (Vec2::from_angle(rng.random_range(0.0..std::f32::consts::TAU))
+                        * spawn_radius
+                        * rng.random_range(0.0f32..1.0).sqrt())
+                    .extend(1.0),
                 ),
-                node.clone(),
+                node,
+                origin,
                 Displacement(Vec3::ZERO),
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    Text2d::new(new_node.Name),
+                    Text2d::new(name.clone()),
                     TextFont {
                         font_size: 120.0,
                         ..default()
@@ -126,69 +198,161 @@ fn spawn_nodes(
                 ));
             })
             .id();
-        names_map.0.insert(node.Name, id.clone());
+        names_map.0.insert(name, id);
     }
 }
 
-fn spawn_edges(mut commands: Commands, nodes: Query<&Node>, names_map: Res<EntityNameMap>) {
-    let mut n_edges = 0;
-    for node in &nodes {
-        for dep in node.dep.clone() {
-            let from = names_map.0[&node.Name];
-            let to = names_map.0[&dep];
+fn spawn_edges(
+    mut commands: Commands,
+    mut nodes: Query<(Entity, &Node, &mut Transform)>,
+    names_map: Res<EntityNameMap>,
+) {
+    let entities: Vec<Entity> = nodes.iter().map(|(e, ..)| e).collect();
+    let index: HashMap<Entity, usize> = entities.iter().enumerate().map(|(i, e)| (*e, i)).collect();
 
-            commands.spawn((
-                Edge { from, to },
-                Sprite {
-                    color: Color::WHITE,
-                    custom_size: Some(Vec2::ZERO),
-                    ..default()
-                },
-                Transform::from_xyz(0.0, 0.0, 0.0),
-            ));
-
-            n_edges += 1;
+    let mut edges = Vec::new();
+    let mut n_unknown = 0;
+    for (entity, node, ..) in &nodes {
+        for dep in &node.dep {
+            if *dep == node.Name {
+                continue;
+            }
+            match names_map.0.get(dep) {
+                Some(to) => edges.push((index[&entity], index[to])),
+                None => n_unknown += 1,
+            }
         }
     }
-    println!("Number of edges {}", n_edges);
+    edges.sort_unstable();
+    edges.dedup();
+
+    let redundant = transitive_reduction(entities.len(), &edges);
+    let n_redundant = redundant.iter().filter(|r| **r).count();
+
+    for (&(from, to), &redundant) in edges.iter().zip(&redundant) {
+        commands.spawn(Edge {
+            from: entities[from],
+            to: entities[to],
+            redundant,
+        });
+    }
+
+    let sizes = entities
+        .iter()
+        .map(|e| {
+            nodes
+                .get(*e)
+                .ok()
+                .and_then(|(_, n, ..)| n.Size)
+                .unwrap_or(0)
+        })
+        .collect();
+    let analysis = GraphAnalysis::new(entities, &edges, &redundant, sizes);
+
+    for (entity, _, mut transform) in &mut nodes {
+        if analysis.is_root[analysis.index[&entity]] {
+            transform.scale = Vec3::splat(ROOT_SCALE);
+        }
+    }
+
+    info!(
+        "Number of edges {} ({n_redundant} redundant, {n_unknown} unknown dependencies ignored), {} root packages",
+        edges.len(),
+        analysis.is_root.iter().filter(|r| **r).count()
+    );
+    commands.insert_resource(analysis);
 }
 
 fn draw_edges(
-    mut sprite_query: Query<(&mut Transform, &mut Sprite, &Edge), (With<Sprite>, Without<Node>)>,
+    mut gizmos: Gizmos,
+    params: Res<Parameters>,
+    selection: Res<Selection>,
+    insight: Res<SelectionInsight>,
+    hovered: Res<Hovered>,
+    drag: Res<DragState>,
+    search: Res<Search>,
+    edges: Query<&Edge>,
     nodes: Query<&Transform, With<Node>>,
+    pinned: Query<&Transform, (With<Node>, With<Pinned>)>,
 ) {
-    sprite_query.iter_mut().for_each(|(mut tr, mut spr, edge)| {
-        if let (Ok(from_tf), Ok(to_tf)) = (nodes.get(edge.from), nodes.get(edge.to)) {
-            let start = from_tf.translation;
-            let end = to_tf.translation;
+    // Résultats de recherche entourés (limité pour rester lisible et rapide).
+    for tr in search
+        .matches
+        .iter()
+        .take(500)
+        .filter_map(|e| nodes.get(*e).ok())
+    {
+        gizmos.circle_2d(
+            tr.translation.truncate(),
+            100.0 * tr.scale.x + 45.0,
+            SEARCH_COLOR,
+        );
+    }
 
-            let length = start.distance(end);
-            let diff = start - end;
-            let theta = diff.y.atan2(diff.x);
-            let midpoint = (start + end) / 2.;
-
-            spr.custom_size = Some(Vec2::new(length, 0.00000001 * length * length));
-
-            *tr = Transform::from_xyz(midpoint.x, midpoint.y, -1.0)
-                .with_rotation(Quat::from_rotation_z(theta));
+    let selected = selection.entity;
+    // Pendant un glisser, on met en évidence le nœud déplacé.
+    let hovered = drag.entity.or(hovered.0);
+    let touches_hovered = |edge: &Edge| hovered.is_some_and(|h| edge.from == h || edge.to == h);
+    let on_root_path = |edge: &Edge| {
+        insight
+            .root_path
+            .windows(2)
+            .any(|w| w[0] == edge.from && w[1] == edge.to)
+    };
+    for edge in &edges {
+        if !edge.is_active(&params) {
+            continue;
         }
-    });
+        let color = match selected {
+            None => EDGE_COLOR,
+            Some(_) if on_root_path(edge) => ROOT_PATH_COLOR,
+            Some(s) if edge.from == s => DEPENDENCY_COLOR,
+            Some(s) if edge.to == s => DEPENDENT_COLOR,
+            _ if touches_hovered(edge) => HOVER_COLOR,
+            Some(_) => EDGE_DIMMED_COLOR,
+        };
+        if let Ok([from, to]) = nodes.get_many([edge.from, edge.to]) {
+            gizmos.line_2d(
+                from.translation.truncate(),
+                to.translation.truncate(),
+                color,
+            );
+        }
+    }
+
+    if let Some(tr) = selected.and_then(|s| nodes.get(s).ok()) {
+        gizmos.circle_2d(
+            tr.translation.truncate(),
+            100.0 * tr.scale.x + 60.0,
+            SELECTION_COLOR,
+        );
+    }
+    if let Some(tr) = hovered.and_then(|h| nodes.get(h).ok()) {
+        gizmos.circle_2d(
+            tr.translation.truncate(),
+            100.0 * tr.scale.x + 30.0,
+            HOVER_COLOR,
+        );
+    }
+    for tr in &pinned {
+        // Petit point central : nœud épinglé.
+        gizmos.circle_2d(tr.translation.truncate(), 30.0 * tr.scale.x, PINNED_COLOR);
+    }
 }
 
 fn repulsion(params: Res<Parameters>, mut query: Query<(&Transform, &mut Displacement)>) {
-    let mut iter = query.iter_combinations_mut();
-    while let Some([(transform_a, mut disp_a), (transform_b, mut disp_b)]) = iter.fetch_next() {
-        let pos_a = transform_a.translation.truncate();
-        let pos_b = transform_b.translation.truncate();
+    let points: Vec<Vec2> = query
+        .iter()
+        .map(|(tr, _)| tr.translation.truncate())
+        .collect();
+    let tree = QuadTree::new(&points);
 
-        let dir = pos_b - pos_a;
-        let dist = dir.length();
-        let delta = params.repulsion * (dir.normalize() * (params.k.powi(2) / dist)).extend(0.0);
-        if dist > 0.0 {
-            disp_a.0 -= delta;
-            disp_b.0 += delta;
-        }
-    }
+    let factor = params.repulsion * params.k.powi(2);
+    let theta = params.theta;
+    query.par_iter_mut().for_each(|(tr, mut disp)| {
+        let force = tree.repulsion(tr.translation.truncate(), theta);
+        disp.0 += (force * factor).extend(0.0);
+    });
 }
 
 fn attraction(
@@ -196,16 +360,19 @@ fn attraction(
     edge_query: Query<&Edge>,
     mut node_query: Query<(&Transform, &mut Displacement)>,
 ) {
-    edge_query.iter().for_each(|edge| {
-        if let Ok([(tr_a, mut disp_a), (tr_b, mut disp_b)]) =
-            node_query.get_many_mut([edge.from, edge.to])
-        {
-            let dir = tr_a.translation - tr_b.translation;
-            let step = params.attraction * dir.normalize() * dir.length() / params.k;
-            disp_a.0 -= step;
-            disp_b.0 += step;
-        }
-    });
+    edge_query
+        .iter()
+        .filter(|e| e.is_active(&params))
+        .for_each(|edge| {
+            if let Ok([(tr_a, mut disp_a), (tr_b, mut disp_b)]) =
+                node_query.get_many_mut([edge.from, edge.to])
+            {
+                let dir = tr_a.translation - tr_b.translation;
+                let step = params.attraction * dir.normalize_or_zero() * dir.length() / params.k;
+                disp_a.0 -= step;
+                disp_b.0 += step;
+            }
+        });
 }
 
 fn center_force(params: Res<Parameters>, mut node_query: Query<(&Transform, &mut Displacement)>) {
@@ -214,29 +381,64 @@ fn center_force(params: Res<Parameters>, mut node_query: Query<(&Transform, &mut
     });
 }
 
-fn apply_physics(params: Res<Parameters>, mut query: Query<(&mut Transform, &mut Displacement)>) {
-    query.iter_mut().for_each(|(mut transform, mut disp)| {
-        let step = disp.0.length().min(params.max_step);
-        transform.translation += disp.0.normalize_or_zero() * step; //  * temp.0;
+fn apply_physics(
+    params: Res<Parameters>,
+    mut simulation: ResMut<Simulation>,
+    mut query: Query<(&mut Transform, &mut Displacement, Has<Pinned>)>,
+) {
+    let step = simulation.step;
+    let mut energy = 0.0;
+    let mut total_move = 0.0;
+    let mut n = 0;
 
-        disp.0 = Vec3::ZERO;
+    query
+        .iter_mut()
+        .for_each(|(mut transform, mut disp, pinned)| {
+            if pinned {
+                disp.0 = Vec3::ZERO;
+                return;
+            }
+            energy += disp.0.length_squared();
+            let movement = disp.0.normalize_or_zero() * disp.0.length().min(step);
+            transform.translation += movement;
+            total_move += movement.length();
+            n += 1;
 
-        // Limit nodes into a circle
-        let pos = transform.translation.truncate();
-        let r = pos.length();
-        if r > params.max_diameter / 2.0 {
-            transform.translation = (pos / r * params.max_diameter / 2.0).extend(0.0);
+            disp.0 = Vec3::ZERO;
+
+            // Limit nodes into a circle
+            let pos = transform.translation.truncate();
+            let r = pos.length();
+            if r > params.max_diameter / 2.0 {
+                transform.translation = (pos / r * params.max_diameter / 2.0).extend(1.0);
+            }
+        });
+
+    // Pas adaptatif (Yifan Hu, 2005) : on accélère tant que l'énergie baisse,
+    // on ralentit dès qu'elle remonte (oscillation).
+    if energy < simulation.energy {
+        simulation.progress += 1;
+        if simulation.progress >= 5 {
+            simulation.progress = 0;
+            simulation.step = (simulation.step / params.cooling).min(params.max_diameter / 10.0);
         }
-    });
+    } else {
+        simulation.progress = 0;
+        simulation.step =
+            (simulation.step * params.cooling).max(MIN_STEP * params.natural_length());
+    }
+    simulation.energy = energy;
+    simulation.mean_move = total_move / n.max(1) as f32;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Parameters;
     use super::*;
+    use super::{Parameters, Simulation};
     use bevy::{
+        log::LogPlugin,
         render::{RenderPlugin, settings::WgpuSettings},
-        winit::{WakeUp, WinitPlugin},
+        winit::WinitPlugin,
     };
 
     const ITER_UPDATE: usize = 100;
@@ -248,9 +450,6 @@ mod tests {
             new_dist $cmp:tt prev_dist $(,)?
         ) => {
             {
-                let mut winit = WinitPlugin::<WakeUp>::default();
-                winit.run_on_any_thread = true;
-
                 let mut app = App::new();
 
                 app.add_plugins(
@@ -263,10 +462,13 @@ mod tests {
                             .into(),
                             ..default()
                         })
-                        .set(winit),
+                        // winit n'accepte qu'une boucle d'événements par processus,
+                        // or les tests tournent en parallèle dans le même processus.
+                        .disable::<WinitPlugin>()
+                        .disable::<LogPlugin>(),
                 )
-                .insert_resource(crate::LoadParams {
-                    opt_raw_json: Some(
+                .insert_resource(PackagesData {
+                    nodes: serde_json::from_str(
                         r#"
                            [
                                {
@@ -280,17 +482,18 @@ mod tests {
                                    "introduced_in": "1"
                                }
                            ]
-                        "#
-                        .into(),
-                    ),
-                    opt_file: None,
+                        "#,
+                    )
+                    .unwrap(),
+                    source: "test".into(),
                 })
                 .insert_resource(Parameters {
                     $($pfield : $pvalue),*,
                     ..default()
                 })
+                .insert_resource(Simulation::default())
                 .insert_resource(EntityNameMap(HashMap::new()))
-                .insert_resource(ColorLayerMap(HashMap::new()))
+                .insert_resource(LayerColors::default())
                 .add_systems(Startup, (spawn_nodes, spawn_edges).chain())
                 .add_systems(Update, ( $($update_sys),* , apply_physics).chain());
 
@@ -337,7 +540,7 @@ mod tests {
     #[test]
     fn check_attraction() {
         bevy_two_nodes_graph_test!(
-            params = {repulsion: 0.0, attraction: 10.0, center: 0.0},
+            params = {repulsion: 0.0, attraction: 0.1, center: 0.0},
             update_systems = [attraction],
             new_dist < prev_dist,
         );

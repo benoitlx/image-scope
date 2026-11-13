@@ -2,7 +2,11 @@ image_dir/
 *.tar
 system.txt
 packages-map.json
+security-advisories.json
 
 # Added by cargo
 
 /target
+
+# Web build (trunk)
+/dist
